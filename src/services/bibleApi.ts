@@ -1,39 +1,52 @@
+/**
+ * bibleApi.ts — cliente para bible-api.com
+ *
+ * Base URL : https://bible-api.com
+ * Sem autenticação, rate limit de 15 req/30s por IP.
+ *
+ * Traduções disponíveis:
+ *   PT → almeida  (João Ferreira de Almeida)
+ *   EN → web      (World English Bible)
+ *   EN → kjv      (King James Version)
+ *
+ * Futuramente pode ser trocado pela API.Bible sem alterar os hooks —
+ * basta atualizar as funções aqui mantendo as mesmas assinaturas.
+ */
+
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BIBLE_BOOKS, type BookMeta } from '../constants/bibleBooks';
 import type { BibleBook, BibleChapter, BibleVerse, BiblePassage } from '../types/bible';
+import type { Language, BibleVersion } from '../types/bible';
 
-const BASE_URL = 'https://api.scripture.api.bible/v1';
+const BASE_URL = 'https://bible-api.com';
+const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days (conteúdo bíblico não muda)
 
-// Replace with your API.Bible key (free at https://scripture.api.bible)
-const API_KEY = process.env.EXPO_PUBLIC_BIBLE_API_KEY ?? 'YOUR_API_BIBLE_KEY';
+// Mapeamento das versões do app → translation ID da API
+export const TRANSLATION_ID: Record<BibleVersion, string> = {
+  ARC: 'almeida',
+  WEB: 'web',
+  KJV: 'kjv',
+};
 
-// Bible version IDs on API.Bible
-export const BIBLE_VERSIONS = {
-  NVI: 'bf8f1c7f3f9f8f8f-01',   // NVI Português — update with real ID after registering
-  ARC: '55212e3cf5d04d49-01',   // Almeida Revista e Corrigida
-  NIV: '06125adad2d5898a-01',   // NIV English
-  ESV: '9879dbb7cfe39e4d-01',   // ESV English
-} as const;
-
-const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+export const DEFAULT_VERSION: Record<Language, BibleVersion> = {
+  pt: 'ARC',
+  en: 'WEB',
+};
 
 const api = axios.create({
   baseURL: BASE_URL,
-  headers: {
-    'api-key': API_KEY,
-    'Accept': 'application/json',
-  },
   timeout: 10000,
 });
 
-// ─── Cache helpers ───────────────────────────────────────────────────────────
+// ─── Cache helpers ────────────────────────────────────────────────────────────
 
 async function getCached<T>(key: string): Promise<T | null> {
   try {
-    const raw = await AsyncStorage.getItem(`bible_cache_${key}`);
+    const raw = await AsyncStorage.getItem(`bcache_${key}`);
     if (!raw) return null;
-    const { data, timestamp } = JSON.parse(raw) as { data: T; timestamp: number };
-    if (Date.now() - timestamp > CACHE_TTL) return null;
+    const { data, ts } = JSON.parse(raw) as { data: T; ts: number };
+    if (Date.now() - ts > CACHE_TTL) return null;
     return data;
   } catch {
     return null;
@@ -42,68 +55,66 @@ async function getCached<T>(key: string): Promise<T | null> {
 
 async function setCache<T>(key: string, data: T): Promise<void> {
   try {
-    await AsyncStorage.setItem(
-      `bible_cache_${key}`,
-      JSON.stringify({ data, timestamp: Date.now() }),
-    );
+    await AsyncStorage.setItem(`bcache_${key}`, JSON.stringify({ data, ts: Date.now() }));
   } catch {
-    // silently fail — cache is best-effort
+    // cache é best-effort
   }
 }
 
-// ─── Books ───────────────────────────────────────────────────────────────────
+// ─── Books (lista estática — não precisa de chamada API) ──────────────────────
 
-export async function getBooks(bibleId: string): Promise<BibleBook[]> {
-  const cacheKey = `books_${bibleId}`;
-  const cached = await getCached<BibleBook[]>(cacheKey);
-  if (cached) return cached;
-
-  const { data } = await api.get(`/bibles/${bibleId}/books`);
-  const books: BibleBook[] = data.data.map((b: any) => ({
+export function getBooks(language: Language): BibleBook[] {
+  return BIBLE_BOOKS.map((b: BookMeta) => ({
     id: b.id,
-    name: b.name,
-    nameLong: b.nameLong,
-    abbreviation: b.abbreviation,
-    testament: b.id <= 'MAL' ? 'OT' : 'NT',
+    name: language === 'pt' ? b.namePt : b.nameEn,
+    nameLong: language === 'pt' ? b.namePt : b.nameEn,
+    abbreviation: b.id,
+    testament: b.testament,
   }));
-
-  await setCache(cacheKey, books);
-  return books;
 }
 
-// ─── Chapters ────────────────────────────────────────────────────────────────
+// ─── Chapters (gerado a partir dos metadados estáticos) ───────────────────────
 
-export async function getChapters(bibleId: string, bookId: string): Promise<BibleChapter[]> {
-  const cacheKey = `chapters_${bibleId}_${bookId}`;
-  const cached = await getCached<BibleChapter[]>(cacheKey);
-  if (cached) return cached;
+export function getChapters(bookId: string): BibleChapter[] {
+  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
+  if (!book) return [];
 
-  const { data } = await api.get(`/bibles/${bibleId}/books/${bookId}/chapters`);
-  const chapters: BibleChapter[] = data.data.map((c: any) => ({
-    id: c.id,
-    bookId: c.bookId,
-    number: c.number,
-    reference: c.reference,
+  return Array.from({ length: book.chapters }, (_, i) => ({
+    id: `${bookId}.${i + 1}`,
+    bookId,
+    number: String(i + 1),
+    reference: `${book.namePt} ${i + 1}`,
   }));
-
-  await setCache(cacheKey, chapters);
-  return chapters;
 }
 
-// ─── Verses ──────────────────────────────────────────────────────────────────
+// ─── Chapter content (versículos de um capítulo inteiro) ──────────────────────
 
-export async function getVerses(bibleId: string, chapterId: string): Promise<BibleVerse[]> {
-  const cacheKey = `verses_${bibleId}_${chapterId}`;
+export async function getChapterVerses(
+  bookId: string,
+  chapter: number,
+  version: BibleVersion = 'ARC',
+): Promise<BibleVerse[]> {
+  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
+  if (!book) throw new Error(`Book not found: ${bookId}`);
+
+  const translation = TRANSLATION_ID[version];
+  const cacheKey = `chapter_${bookId}_${chapter}_${translation}`;
   const cached = await getCached<BibleVerse[]>(cacheKey);
   if (cached) return cached;
 
-  const { data } = await api.get(`/bibles/${bibleId}/chapters/${chapterId}/verses`);
-  const verses: BibleVerse[] = data.data.map((v: any) => ({
-    id: v.id,
-    bookId: v.bookId,
-    chapterId: v.chapterId,
-    reference: v.reference,
-    text: v.text ?? '',
+  // Usa a rota /data/{translation}/{BOOK_ID}/{chapter} — mais confiável
+  const { data } = await api.get(`/data/${translation}/${bookId}/${chapter}`);
+
+  const bookName = version === 'ARC'
+    ? data.verses[0]?.book ?? book.namePt
+    : data.verses[0]?.book ?? book.nameEn;
+
+  const verses: BibleVerse[] = data.verses.map((v: any) => ({
+    id: `${bookId}.${chapter}.${v.verse}`,
+    bookId,
+    chapterId: `${bookId}.${chapter}`,
+    reference: `${bookName} ${chapter}:${v.verse}`,
+    text: v.text.replace(/\u00a0/g, '').trim(),
   }));
 
   await setCache(cacheKey, verses);
@@ -112,72 +123,94 @@ export async function getVerses(bibleId: string, chapterId: string): Promise<Bib
 
 // ─── Single verse ─────────────────────────────────────────────────────────────
 
-export async function getVerse(bibleId: string, verseId: string): Promise<BibleVerse> {
-  const cacheKey = `verse_${bibleId}_${verseId}`;
-  const cached = await getCached<BibleVerse>(cacheKey);
-  if (cached) return cached;
+export async function getVerse(
+  bookId: string,
+  chapter: number,
+  verse: number,
+  version: BibleVersion = 'ARC',
+): Promise<BibleVerse> {
+  // Reutiliza o capítulo cacheado para evitar chamadas extras
+  const chapterVerses = await getChapterVerses(bookId, chapter, version);
+  const found = chapterVerses.find((v) => v.id === `${bookId}.${chapter}.${verse}`);
+  if (found) return found;
 
-  const { data } = await api.get(`/bibles/${bibleId}/verses/${verseId}`, {
-    params: { 'content-type': 'text', 'include-notes': false, 'include-titles': false },
+  // Fallback: busca direta pelo versículo
+  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
+  if (!book) throw new Error(`Book not found: ${bookId}`);
+
+  const translation = TRANSLATION_ID[version];
+  const { data } = await api.get(`/${book.apiName}+${chapter}:${verse}`, {
+    params: { translation },
   });
 
-  const verse: BibleVerse = {
-    id: data.data.id,
-    bookId: data.data.bookId,
-    chapterId: data.data.chapterId,
-    reference: data.data.reference,
-    text: data.data.content.replace(/<[^>]*>/g, '').trim(),
+  return {
+    id: `${bookId}.${chapter}.${verse}`,
+    bookId,
+    chapterId: `${bookId}.${chapter}`,
+    reference: data.reference,
+    text: data.text.replace(/\u00a0/g, '').trim(),
   };
-
-  await setCache(cacheKey, verse);
-  return verse;
 }
 
-// ─── Passage ──────────────────────────────────────────────────────────────────
+// ─── Passage (range de versículos) ───────────────────────────────────────────
 
-export async function getPassage(bibleId: string, passageId: string): Promise<BiblePassage> {
-  const cacheKey = `passage_${bibleId}_${passageId}`;
+export async function getPassage(
+  bookId: string,
+  chapter: number,
+  verseStart: number,
+  verseEnd: number,
+  version: BibleVersion = 'ARC',
+): Promise<BiblePassage> {
+  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
+  if (!book) throw new Error(`Book not found: ${bookId}`);
+
+  const translation = TRANSLATION_ID[version];
+  const cacheKey = `passage_${bookId}_${chapter}_${verseStart}_${verseEnd}_${translation}`;
   const cached = await getCached<BiblePassage>(cacheKey);
   if (cached) return cached;
 
-  const { data } = await api.get(`/bibles/${bibleId}/passages/${passageId}`, {
-    params: { 'content-type': 'text', 'include-notes': false, 'include-titles': true },
+  const { data } = await api.get(`/${book.apiName}+${chapter}:${verseStart}-${verseEnd}`, {
+    params: { translation },
   });
 
   const passage: BiblePassage = {
-    id: data.data.id,
-    reference: data.data.reference,
-    content: data.data.content.replace(/<[^>]*>/g, '').trim(),
-    copyright: data.data.copyright ?? '',
+    id: `${bookId}.${chapter}.${verseStart}-${verseEnd}`,
+    reference: data.reference,
+    content: data.text.trim(),
+    copyright: data.translation_note ?? '',
   };
 
   await setCache(cacheKey, passage);
   return passage;
 }
 
-// ─── Search ───────────────────────────────────────────────────────────────────
+// ─── Random verse ─────────────────────────────────────────────────────────────
 
-export async function searchVerses(
-  bibleId: string,
-  query: string,
-  limit = 20,
-): Promise<BibleVerse[]> {
-  const { data } = await api.get(`/bibles/${bibleId}/search`, {
-    params: { query, limit, sort: 'relevance' },
-  });
+export async function getRandomVerse(version: BibleVersion = 'ARC'): Promise<BibleVerse> {
+  const translation = TRANSLATION_ID[version];
+  const { data } = await api.get(`/data/${translation}/random`);
 
-  return (data.data.verses ?? []).map((v: any) => ({
-    id: v.id,
-    bookId: v.bookId,
-    chapterId: v.chapterId,
-    reference: v.reference,
-    text: v.text,
-  }));
+  const book = BIBLE_BOOKS.find(
+    (b) => b.nameEn.toLowerCase() === (data.verses?.[0]?.book_name ?? '').toLowerCase(),
+  );
+
+  return {
+    id: `random_${Date.now()}`,
+    bookId: book?.id ?? '',
+    chapterId: '',
+    reference: data.reference,
+    text: data.text.trim(),
+  };
 }
 
-// ─── Available Bibles ─────────────────────────────────────────────────────────
+// ─── Search (client-side sobre o capítulo já carregado) ──────────────────────
+// bible-api.com não tem endpoint de busca — a busca full-text será implementada
+// via SQLite local em uma etapa futura. Por ora retorna array vazio com aviso.
 
-export async function getAvailableBibles() {
-  const { data } = await api.get('/bibles');
-  return data.data;
+export async function searchVerses(
+  _query: string,
+  _version: BibleVersion = 'ARC',
+): Promise<BibleVerse[]> {
+  // TODO: implementar busca offline via Expo SQLite
+  return [];
 }

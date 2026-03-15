@@ -1,6 +1,7 @@
 export type Language = 'pt' | 'en';
 
-export type BibleVersion = 'NVI' | 'ARC' | 'NIV' | 'ESV';
+// Versões disponíveis na bible-api.com (upgrade para API.Bible no futuro)
+export type BibleVersion = 'ARC' | 'WEB' | 'KJV';
 
 export interface BibleBook {
   id: string;

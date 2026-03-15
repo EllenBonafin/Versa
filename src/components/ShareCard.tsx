@@ -1,9 +1,7 @@
-import React, { useRef } from 'react';
+import React, { forwardRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import ViewShot from 'react-native-view-shot';
 import { COLORS, FONTS, FONT_SIZES, SPACING } from '../constants/theme';
-
-// This component renders the card that gets captured and shared as an image.
-// Use ViewShot (react-native-view-shot) to capture it.
 
 interface ShareCardProps {
   text: string;
@@ -13,45 +11,60 @@ interface ShareCardProps {
   showBilingual?: boolean;
 }
 
-export function ShareCard({
-  text,
-  reference,
-  textEn,
-  referenceEn,
-  showBilingual = false,
-}: ShareCardProps) {
-  return (
-    <View style={styles.card}>
-      {/* App branding */}
-      <Text style={styles.brand}>Versa</Text>
+/**
+ * Card estético para captura e compartilhamento como imagem.
+ * Envolto em <ViewShot> para permitir captura via ref.
+ *
+ * Uso:
+ *   const { viewShotRef, shareAsImage } = useShareVerse();
+ *   <ShareCard ref={viewShotRef} ... />
+ *   await shareAsImage();
+ */
+export const ShareCard = forwardRef<ViewShot, ShareCardProps>(
+  ({ text, reference, textEn, referenceEn, showBilingual = false }, ref) => {
+    return (
+      <ViewShot
+        ref={ref}
+        options={{ format: 'png', quality: 1 }}
+        style={styles.shot}
+      >
+        <View style={styles.card}>
+          {/* Branding */}
+          <Text style={styles.brand}>Versa</Text>
+          <View style={styles.goldDivider} />
 
-      {/* Decorative divider */}
-      <View style={styles.goldDivider} />
+          {/* Quote mark decorativo */}
+          <Text style={styles.quoteChar}>"</Text>
 
-      {/* Quote mark */}
-      <Text style={styles.quoteChar}>"</Text>
+          {/* Versículo PT */}
+          <Text style={styles.verseText}>{text}</Text>
+          <Text style={styles.reference}>{reference}</Text>
 
-      {/* PT Verse */}
-      <Text style={styles.verseText}>{text}</Text>
-      <Text style={styles.reference}>{reference}</Text>
+          {/* Versículo EN (bilíngue) */}
+          {showBilingual && textEn && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.verseTextEn}>{textEn}</Text>
+              {referenceEn && <Text style={styles.referenceEn}>{referenceEn}</Text>}
+            </>
+          )}
 
-      {/* EN Verse (bilingual) */}
-      {showBilingual && textEn && (
-        <>
-          <View style={styles.divider} />
-          <Text style={styles.verseTextEn}>{textEn}</Text>
-          {referenceEn && <Text style={styles.referenceEn}>{referenceEn}</Text>}
-        </>
-      )}
+          {/* Footer */}
+          <View style={styles.goldDivider} />
+          <Text style={styles.footer}>versa.app</Text>
+        </View>
+      </ViewShot>
+    );
+  },
+);
 
-      {/* Footer */}
-      <View style={styles.goldDivider} />
-      <Text style={styles.footer}>versa.app</Text>
-    </View>
-  );
-}
+ShareCard.displayName = 'ShareCard';
 
 const styles = StyleSheet.create({
+  shot: {
+    // ViewShot precisa de dimensões definidas para capturar corretamente
+    alignSelf: 'center',
+  },
   card: {
     width: 360,
     backgroundColor: COLORS.background,

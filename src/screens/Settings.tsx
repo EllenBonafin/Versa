@@ -19,15 +19,15 @@ const FONT_SIZE_KEY = 'versa_font_size';
 const NOTIFICATION_KEY = 'versa_notification_enabled';
 const NOTIFICATION_TIME_KEY = 'versa_notification_time';
 
-const PT_VERSIONS: BibleVersion[] = ['NVI', 'ARC'];
-const EN_VERSIONS: BibleVersion[] = ['NIV', 'ESV'];
+const PT_VERSIONS: BibleVersion[] = ['ARC'];
+const EN_VERSIONS: BibleVersion[] = ['WEB', 'KJV'];
 
 export function SettingsScreen() {
   const { language, toggleLanguage, t } = useLanguage();
   const [fontSize, setFontSizeState] = useState<'small' | 'medium' | 'large'>('medium');
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifTime, setNotifTime] = useState('08:00');
-  const [bibleVersion, setBibleVersion] = useState<BibleVersion>(language === 'pt' ? 'NVI' : 'NIV');
+  const [bibleVersion, setBibleVersion] = useState<BibleVersion>(language === 'pt' ? 'ARC' : 'WEB');
 
   useEffect(() => {
     Promise.all([
