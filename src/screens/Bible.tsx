@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLanguage } from '../hooks/useLanguage';
 import { useBible } from '../hooks/useBible';
 import { useFavorites } from '../hooks/useFavorites';
+import { useSettings, FONT_SIZE_MAP } from '../store/SettingsContext';
 import { VerseCard } from '../components/VerseCard';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { COLORS, FONTS, FONT_SIZES, SPACING } from '../constants/theme';
@@ -23,6 +24,8 @@ export function BibleScreen({ navigation }: any) {
   const { language, toggleLanguage, t } = useLanguage();
   const bible = useBible(language);
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
+  const { fontSize, bibleVersion } = useSettings();
+  const verseFontSize = FONT_SIZE_MAP[fontSize];
   const [step, setStep] = useState<Step>('books');
   const [query, setQuery] = useState('');
 
@@ -83,7 +86,7 @@ export function BibleScreen({ navigation }: any) {
         }}
         isFavorited={fav}
         variant="minimal"
-        fontSize={FONT_SIZES.base}
+        fontSize={verseFontSize}
       />
     );
   };
@@ -114,7 +117,7 @@ export function BibleScreen({ navigation }: any) {
       ) : bible.error ? (
         <View style={styles.errorView}>
           <Text style={styles.errorText}>{t('bible.error')}</Text>
-          <TouchableOpacity onPress={bible.loadBooks}>
+          <TouchableOpacity onPress={() => bible.loadBooks()}>
             <Text style={styles.retryText}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>

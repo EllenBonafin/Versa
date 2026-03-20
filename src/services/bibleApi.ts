@@ -1,28 +1,25 @@
 /**
- * bibleApi.ts — cliente para bible-api.com
+ * bibleApi.ts — cliente para bible-api.com com cache SQLite offline-first
  *
- * Base URL : https://bible-api.com
- * Sem autenticação, rate limit de 15 req/30s por IP.
+ * Estratégia de cache:
+ *   SQLite (permanente) → rede → salva no SQLite
  *
- * Traduções disponíveis:
- *   PT → almeida  (João Ferreira de Almeida)
- *   EN → web      (World English Bible)
- *   EN → kjv      (King James Version)
- *
- * Futuramente pode ser trocado pela API.Bible sem alterar os hooks —
- * basta atualizar as funções aqui mantendo as mesmas assinaturas.
+ * Busca full-text via SQLite (funciona offline após primeiro download).
  */
 
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BIBLE_BOOKS, type BookMeta } from '../constants/bibleBooks';
+import {
+  isChapterCached,
+  getChapterFromDB,
+  saveChapterToDB,
+  searchInDB,
+} from './database';
 import type { BibleBook, BibleChapter, BibleVerse, BiblePassage } from '../types/bible';
 import type { Language, BibleVersion } from '../types/bible';
 
 const BASE_URL = 'https://bible-api.com';
-const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days (conteúdo bíblico não muda)
 
-// Mapeamento das versões do app → translation ID da API
 export const TRANSLATION_ID: Record<BibleVersion, string> = {
   ARC: 'almeida',
   WEB: 'web',
@@ -34,34 +31,9 @@ export const DEFAULT_VERSION: Record<Language, BibleVersion> = {
   en: 'WEB',
 };
 
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 10000,
-});
+const api = axios.create({ baseURL: BASE_URL, timeout: 12000 });
 
-// ─── Cache helpers ────────────────────────────────────────────────────────────
-
-async function getCached<T>(key: string): Promise<T | null> {
-  try {
-    const raw = await AsyncStorage.getItem(`bcache_${key}`);
-    if (!raw) return null;
-    const { data, ts } = JSON.parse(raw) as { data: T; ts: number };
-    if (Date.now() - ts > CACHE_TTL) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-async function setCache<T>(key: string, data: T): Promise<void> {
-  try {
-    await AsyncStorage.setItem(`bcache_${key}`, JSON.stringify({ data, ts: Date.now() }));
-  } catch {
-    // cache é best-effort
-  }
-}
-
-// ─── Books (lista estática — não precisa de chamada API) ──────────────────────
+// ─── Books (estático) ─────────────────────────────────────────────────────────
 
 export function getBooks(language: Language): BibleBook[] {
   return BIBLE_BOOKS.map((b: BookMeta) => ({
@@ -73,12 +45,11 @@ export function getBooks(language: Language): BibleBook[] {
   }));
 }
 
-// ─── Chapters (gerado a partir dos metadados estáticos) ───────────────────────
+// ─── Chapters (estático) ──────────────────────────────────────────────────────
 
 export function getChapters(bookId: string): BibleChapter[] {
   const book = BIBLE_BOOKS.find((b) => b.id === bookId);
   if (!book) return [];
-
   return Array.from({ length: book.chapters }, (_, i) => ({
     id: `${bookId}.${i + 1}`,
     bookId,
@@ -87,7 +58,7 @@ export function getChapters(bookId: string): BibleChapter[] {
   }));
 }
 
-// ─── Chapter content (versículos de um capítulo inteiro) ──────────────────────
+// ─── Chapter verses — SQLite first, rede como fallback ───────────────────────
 
 export async function getChapterVerses(
   bookId: string,
@@ -98,16 +69,18 @@ export async function getChapterVerses(
   if (!book) throw new Error(`Book not found: ${bookId}`);
 
   const translation = TRANSLATION_ID[version];
-  const cacheKey = `chapter_${bookId}_${chapter}_${translation}`;
-  const cached = await getCached<BibleVerse[]>(cacheKey);
-  if (cached) return cached;
 
-  // Usa a rota /data/{translation}/{BOOK_ID}/{chapter} — mais confiável
+  // 1. Tenta o SQLite
+  const cached = await isChapterCached(bookId, chapter, translation);
+  if (cached) {
+    const rows = await getChapterFromDB(bookId, chapter, translation);
+    if (rows && rows.length > 0) return rows;
+  }
+
+  // 2. Busca na rede
   const { data } = await api.get(`/data/${translation}/${bookId}/${chapter}`);
 
-  const bookName = version === 'ARC'
-    ? data.verses[0]?.book ?? book.namePt
-    : data.verses[0]?.book ?? book.nameEn;
+  const bookName = data.verses[0]?.book ?? (version === 'ARC' ? book.namePt : book.nameEn);
 
   const verses: BibleVerse[] = data.verses.map((v: any) => ({
     id: `${bookId}.${chapter}.${v.verse}`,
@@ -117,7 +90,9 @@ export async function getChapterVerses(
     text: v.text.replace(/\u00a0/g, '').trim(),
   }));
 
-  await setCache(cacheKey, verses);
+  // 3. Salva no SQLite para uso offline futuro
+  await saveChapterToDB(verses, chapter, translation);
+
   return verses;
 }
 
@@ -129,30 +104,13 @@ export async function getVerse(
   verse: number,
   version: BibleVersion = 'ARC',
 ): Promise<BibleVerse> {
-  // Reutiliza o capítulo cacheado para evitar chamadas extras
-  const chapterVerses = await getChapterVerses(bookId, chapter, version);
-  const found = chapterVerses.find((v) => v.id === `${bookId}.${chapter}.${verse}`);
+  const verses = await getChapterVerses(bookId, chapter, version);
+  const found = verses.find((v) => v.id === `${bookId}.${chapter}.${verse}`);
   if (found) return found;
-
-  // Fallback: busca direta pelo versículo
-  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
-  if (!book) throw new Error(`Book not found: ${bookId}`);
-
-  const translation = TRANSLATION_ID[version];
-  const { data } = await api.get(`/${book.apiName}+${chapter}:${verse}`, {
-    params: { translation },
-  });
-
-  return {
-    id: `${bookId}.${chapter}.${verse}`,
-    bookId,
-    chapterId: `${bookId}.${chapter}`,
-    reference: data.reference,
-    text: data.text.replace(/\u00a0/g, '').trim(),
-  };
+  throw new Error(`Verse not found: ${bookId} ${chapter}:${verse}`);
 }
 
-// ─── Passage (range de versículos) ───────────────────────────────────────────
+// ─── Passage ──────────────────────────────────────────────────────────────────
 
 export async function getPassage(
   bookId: string,
@@ -161,27 +119,27 @@ export async function getPassage(
   verseEnd: number,
   version: BibleVersion = 'ARC',
 ): Promise<BiblePassage> {
-  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
-  if (!book) throw new Error(`Book not found: ${bookId}`);
-
-  const translation = TRANSLATION_ID[version];
-  const cacheKey = `passage_${bookId}_${chapter}_${verseStart}_${verseEnd}_${translation}`;
-  const cached = await getCached<BiblePassage>(cacheKey);
-  if (cached) return cached;
-
-  const { data } = await api.get(`/${book.apiName}+${chapter}:${verseStart}-${verseEnd}`, {
-    params: { translation },
+  const verses = await getChapterVerses(bookId, chapter, version);
+  const slice = verses.filter((v) => {
+    const n = parseInt(v.id.split('.')[2], 10);
+    return n >= verseStart && n <= verseEnd;
   });
 
-  const passage: BiblePassage = {
+  return {
     id: `${bookId}.${chapter}.${verseStart}-${verseEnd}`,
-    reference: data.reference,
-    content: data.text.trim(),
-    copyright: data.translation_note ?? '',
+    reference: `${slice[0]?.reference.replace(/:\d+$/, '')}:${verseStart}-${verseEnd}`,
+    content: slice.map((v) => v.text).join(' '),
+    copyright: 'Public Domain',
   };
+}
 
-  await setCache(cacheKey, passage);
-  return passage;
+// ─── Search full-text via SQLite ──────────────────────────────────────────────
+
+export async function searchVerses(
+  query: string,
+  version: BibleVersion = 'ARC',
+): Promise<BibleVerse[]> {
+  return searchInDB(query, TRANSLATION_ID[version]);
 }
 
 // ─── Random verse ─────────────────────────────────────────────────────────────
@@ -189,28 +147,37 @@ export async function getPassage(
 export async function getRandomVerse(version: BibleVersion = 'ARC'): Promise<BibleVerse> {
   const translation = TRANSLATION_ID[version];
   const { data } = await api.get(`/data/${translation}/random`);
-
   const book = BIBLE_BOOKS.find(
-    (b) => b.nameEn.toLowerCase() === (data.verses?.[0]?.book_name ?? '').toLowerCase(),
+    (b) => b.nameEn.toLowerCase() === (data.verses?.[0]?.book ?? '').toLowerCase(),
   );
-
   return {
     id: `random_${Date.now()}`,
     bookId: book?.id ?? '',
     chapterId: '',
     reference: data.reference,
-    text: data.text.trim(),
+    text: data.text.replace(/\u00a0/g, '').trim(),
   };
 }
 
-// ─── Search (client-side sobre o capítulo já carregado) ──────────────────────
-// bible-api.com não tem endpoint de busca — a busca full-text será implementada
-// via SQLite local em uma etapa futura. Por ora retorna array vazio com aviso.
+// ─── Download de um livro inteiro em background ───────────────────────────────
 
-export async function searchVerses(
-  _query: string,
-  _version: BibleVersion = 'ARC',
-): Promise<BibleVerse[]> {
-  // TODO: implementar busca offline via Expo SQLite
-  return [];
+export async function downloadBook(
+  bookId: string,
+  version: BibleVersion,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  const book = BIBLE_BOOKS.find((b) => b.id === bookId);
+  if (!book) return;
+
+  const translation = TRANSLATION_ID[version];
+
+  for (let ch = 1; ch <= book.chapters; ch++) {
+    const already = await isChapterCached(bookId, ch, translation);
+    if (!already) {
+      await getChapterVerses(bookId, ch, version);
+      // Respeita o rate limit da API (15 req/30s)
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    onProgress?.(ch, book.chapters);
+  }
 }

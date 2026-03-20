@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FAFAF8"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="VERSA"
+            android:textColor="#C9A96E"
+            android:textSize="10sp"
+            android:letterSpacing="0.2"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Palavra do Dia"
+            android:textColor="#9CA3AF"
+            android:textSize="9sp" />
+
+    </LinearLayout>
+
+    <!-- Verse -->
+    <TextView
+        android:id="@+id/widget_verse"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="6dp"
+        android:textColor="#1A1A1A"
+        android:textSize="12sp"
+        android:maxLines="4"
+        android:ellipsize="end"
+        android:textStyle="italic"
+        android:gravity="top" />
+
+    <!-- Footer -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="4dp">
+
+        <TextView
+            android:id="@+id/widget_reference"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#C9A96E"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_open_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Abrir →"
+            android:textColor="#A07C42"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:background="@drawable/widget_btn_bg"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

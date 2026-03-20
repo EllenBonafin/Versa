@@ -14,6 +14,7 @@ import { useDailyVerse } from '../hooks/useDailyVerse';
 import { useLanguage } from '../hooks/useLanguage';
 import { useFavorites } from '../hooks/useFavorites';
 import { useShareVerse } from '../hooks/useShareVerse';
+import { useSettings, FONT_SIZE_MAP } from '../store/SettingsContext';
 import { VerseCard } from '../components/VerseCard';
 import { ShareCard } from '../components/ShareCard';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -24,6 +25,8 @@ export function DailyVerseScreen({ navigation }: any) {
   const { verse, isLoading } = useDailyVerse();
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
   const { viewShotRef, shareAsImage, shareAsText } = useShareVerse();
+  const { fontSize } = useSettings();
+  const verseFontSize = FONT_SIZE_MAP[fontSize];
 
   const [showBilingual, setShowBilingual] = useState(false);
   const [shareMode, setShareMode] = useState<'image' | 'text' | null>(null);
@@ -89,7 +92,7 @@ export function DailyVerseScreen({ navigation }: any) {
               textEn={verse.textEn}
               referenceEn={verse.referenceEn}
               showBilingual={showBilingual}
-              fontSize={FONT_SIZES.xl}
+              fontSize={verseFontSize + 4}
               onFavorite={handleFavorite}
               isFavorited={favorited}
               variant="highlight"

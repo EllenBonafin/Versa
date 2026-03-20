@@ -28,6 +28,8 @@ import { GospelScreen } from './src/screens/Gospel';
 import { FavoritesScreen } from './src/screens/Favorites';
 import { SettingsScreen } from './src/screens/Settings';
 import { addNotificationResponseListener } from './src/services/notifications';
+import { SettingsProvider } from './src/store/SettingsContext';
+import { initDatabase } from './src/services/database';
 import { COLORS, FONTS, FONT_SIZES } from './src/constants/theme';
 
 const Tab = createBottomTabNavigator();
@@ -102,6 +104,10 @@ export default function App() {
   });
 
   useEffect(() => {
+    initDatabase().catch(console.warn);
+  }, []);
+
+  useEffect(() => {
     const sub = addNotificationResponseListener((response) => {
       const data = response.notification.request.content.data;
       // Navigate to daily verse when tapping notification
@@ -120,6 +126,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <SettingsProvider>
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Main" component={MainTabs} />
@@ -135,6 +142,7 @@ export default function App() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      </SettingsProvider>
     </SafeAreaProvider>
   );
 }

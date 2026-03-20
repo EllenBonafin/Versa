@@ -3,12 +3,15 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDailyVerse } from '../hooks/useDailyVerse';
 import { useLanguage } from '../hooks/useLanguage';
+import { useSettings, FONT_SIZE_MAP } from '../store/SettingsContext';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { COLORS, FONTS, FONT_SIZES, SPACING } from '../constants/theme';
 
 export function GospelScreen({ navigation }: any) {
   const { language, toggleLanguage, t } = useLanguage();
   const { gospel, isLoading } = useDailyVerse();
+  const { fontSize } = useSettings();
+  const bodyFontSize = FONT_SIZE_MAP[fontSize];
 
   const text = language === 'pt' ? gospel?.text : gospel?.textEn;
   const reference = language === 'pt' ? gospel?.reference : gospel?.referenceEn;
@@ -34,14 +37,14 @@ export function GospelScreen({ navigation }: any) {
 
             {/* Passage */}
             <View style={styles.passageCard}>
-              <Text style={styles.passageText}>{text}</Text>
+              <Text style={[styles.passageText, { fontSize: bodyFontSize, lineHeight: bodyFontSize * 1.7 }]}>{text}</Text>
             </View>
 
             {/* Reflection */}
             <View style={styles.reflectionCard}>
               <Text style={styles.reflectionLabel}>{t('gospel.reflection')}</Text>
               <View style={styles.goldBar} />
-              <Text style={styles.reflectionText}>{reflection}</Text>
+              <Text style={[styles.reflectionText, { fontSize: bodyFontSize - 1, lineHeight: (bodyFontSize - 1) * 1.7 }]}>{reflection}</Text>
             </View>
           </>
         )}

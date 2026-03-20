@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
+import { updateWidgetVerse } from './widgetStorage';
 import type { DailyVerse } from '../types/bible';
 
 const STORAGE_KEY_DAILY_VERSE = 'versa_daily_verse';
@@ -148,6 +149,8 @@ export async function getDailyVerse(): Promise<DailyVerse> {
 
   const verse = getDailyVerseFromPool(today);
   await AsyncStorage.setItem(STORAGE_KEY_DAILY_VERSE, JSON.stringify(verse));
+  // Atualiza o widget nativo com o versículo do dia
+  await updateWidgetVerse(verse.text, verse.reference);
   return verse;
 }
 

@@ -26,6 +26,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withVersaWidgets",
       "expo-font",
       "expo-sqlite",
       "expo-sharing",
@@ -36,7 +37,8 @@
           "color": "#C9A96E",
           "sounds": []
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
