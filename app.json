@@ -23,7 +23,8 @@
       "package": "com.versa.bible"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "baseUrl": "/Versa"
     },
     "plugins": [
       "./plugins/withVersaWidgets",
